@@ -1,9 +1,20 @@
 import streamlit as st
 import pandas as pd
+import numpy as np
+import os
 from FinMind.data import DataLoader
+from fetch_stock_list import import_all_taiwan_stocks
+from check_growth_rates import calculate_and_verify_rates
 
-# 1. 介面設定
+st.set_page_config(page_title="個股基本查詢系統", page_icon="📈", layout="wide")
 st.title("個股基本查詢系統")
+
+st.sidebar.header("系統管理")
+if st.sidebar.button("🔄 更新證交所全台股名冊"):
+    with st.spinner("正在連線證交所 API 並重新分類中..."):
+        import_all_taiwan_stocks()
+        st.sidebar.success("更新成功！")
+
 stock_id = st.text_input("請輸入個股代號", value="2330")
 
 if stock_id:
@@ -15,18 +26,31 @@ if stock_id:
     else:
         stock_name = "未知公司"
 
-    # 2. 抓取技術面資料 (K線)
     df_k = dl.taiwan_stock_daily(stock_id=stock_id, start_date='2025-01-01')
     
-    # 計算 MA5, MA20 (簡易版)
     df_k['MA5'] = df_k['close'].rolling(window=5).mean()
     df_k['MA20'] = df_k['close'].rolling(window=20).mean()
     
-    # 3. 抓取籌碼面 (三大法人)
+
     df_inst = dl.taiwan_stock_institutional_investors(stock_id=stock_id, start_date='2024-01-01')
     
-    # 4. 顯示結果
     st.subheader(f"個股：{stock_name} ({stock_id})")
+    
+    if os.path.exists("stock_list_with_industry.csv"):
+        df_stocks = pd.read_csv("stock_list_with_industry.csv")
+        current_stock_info = df_stocks[df_stocks['stock_id'].astype(str) == str(stock_id)]
+        if not current_stock_info.empty:
+            industry_name = current_stock_info['industry'].values[0]
+            custom_tag_name = current_stock_info['custom_tag'].values[0]
+            
+            col_tag1, col_tag2 = st.columns(2)
+            with col_tag1:
+                st.button(f"🏛️ 官方產業別：{industry_name}", key="ind_btn")
+            with col_tag2:
+                st.button(f"🎯 自訂題材：{custom_tag_name}", key="tag_btn")
+    else:
+        st.warning("提示：請點擊左側「更新證交所全台股名冊」按鈕以啟用智慧分類標籤功能。")
+
     st.write(f"### 最新收盤價: {df_k['close'].iloc[-1]}")
     
     st.write("最近 5 日技術指標")
@@ -51,7 +75,8 @@ if stock_id:
     df_display_foreign = df_inst[['date', 'name', 'buy', 'sell']].tail(10)
     df_display_foreign = df_display_foreign.rename(columns=column_mapping_foreign)
     st.dataframe(df_display_foreign)
-        # 5. 驗證資料並存成 CSV
+    
+    # 5. 驗證資料並存成 CSV
     df_k.to_csv(f"{stock_id}_tech.csv", index=False)
 
     st.write("---") # 畫一條分隔線
@@ -60,40 +85,31 @@ if stock_id:
     # 抓取營收
     df_revenue = dl.taiwan_stock_month_revenue(stock_id=stock_id, start_date='2024-01-01')
     if not df_revenue.empty:
-        # 1. 單位轉換：轉成「億」
         df_revenue['營收(億)'] = (df_revenue['revenue'] / 100000000).round(2)
         
-        # 2. 準備顯示用的表格
+        df_for_calc = df_revenue[['stock_id', 'date', 'revenue']].copy()
+        df_for_calc.columns = ['股票代號', '營收月份', '當月營收']
+        
+        df_verified = calculate_and_verify_rates(df_for_calc)
+        
+        df_revenue['MoM_程式計算(%)'] = df_verified['MoM_程式計算'].round(2)
+        df_revenue['YoY_程式計算(%)'] = df_verified['YoY_程式計算'].round(2)
+        
         rev_display = df_revenue.tail(6).rename(columns={
             'date': '月份',
-            'revenue_month': '月增率(%)',
-            'revenue_year': '年增率(%)'
+            'MoM_程式計算(%)': '驗證月增率(%)',
+            'YoY_程式計算(%)': '驗證年增率(%)'
         })
         
-        # 3. 漂亮呈現
         st.write("### 月營收趨勢")
         
-        # 用一行顯示最新資訊 (Metric)
-    col1, col2, col3 = st.columns(3)
-    latest = df_revenue.iloc[-1]
-    col1.metric("最新月營收", f"{latest['營收(億)']} 億")
-    col2.metric("月增率", f"{latest['revenue_month']}%")
-    col3.metric("年增率", f"{latest['revenue_year']}%")
+        latest = df_revenue.iloc[-1]
+        
+        col1, col2, col3 = st.columns(3)
+        col1.metric("最新月營收", f"{latest['營收(億)']} 億")
+        
+        col2.metric("驗證月增率", f"{latest['MoM_程式計算(%)']}%")
+        
+        col3.metric("驗證年增率", f"{latest['YoY_程式計算(%)']}%")
 
-        # 畫出長條圖
-    st.bar_chart(df_revenue.tail(12).set_index('date')['營收(億)'])
-
-    # 題材分類標籤
-    ai_list = ['2330', '2382', '6669']
-    semi_list = ['2330', '2454', '2303']
-    power_list = ['1503', '1513']
-    cooling_list = ['3017', '3324']
-
-    if stock_id in ai_list:
-        st.button("# AI")
-    if stock_id in semi_list:
-        st.button("# Semi")
-    if stock_id in power_list:
-        st.button("# Power")
-    if stock_id in cooling_list:
-        st.button("# Cooling")
+        st.bar_chart(df_revenue.tail(12).set_index('date')['營收(億)'])

@@ -16,7 +16,7 @@
 
 ## 成果畫面展示(以 2330 為例)
 ### 整體準確率分析畫面
-    ![整體準確率分析畫面](screenshot_accuracy.png)
+![整體準確率分析畫面](screenshot_accuracy.png)
 
 ### streamlit 介面呈現
-    ![streamlit 介面呈現](screenshot_final.png)
+![streamlit 介面呈現](screenshot_final.png)

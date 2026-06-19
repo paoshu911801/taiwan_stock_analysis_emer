@@ -113,3 +113,61 @@ if stock_id:
         col3.metric("驗證年增率", f"{latest['YoY_程式計算(%)']}%")
 
         st.bar_chart(df_revenue.tail(12).set_index('date')['營收(億)'])
+        # ====================================================================
+        # 🤖 導入機器學習模型與介面展示
+        # ====================================================================
+        st.write("---")
+        st.subheader("🤖 機器學習 AI 趨勢預測（Baseline Model）")
+
+        import joblib
+        # 從ml_pipeline.py中，匯入資料
+        from ml_pipeline import prepare_ml_dataset
+
+        # 1. 檢查並載入本地端已經由 run_ml.py 訓練好的模型大腦
+        if os.path.exists('baseline_rf.pkl'):
+            model = joblib.load('baseline_rf.pkl')
+            
+            try:
+                # 複製一份目前的個股 K 線資料，避免污染原本要做圖表的資料
+                df_ml_input = df_k.copy()
+                
+                # 2. 啟動 ml_pipeline.py ，自動把這檔股票的 close / Trading_Volume 算出 ML 特徵
+                processed_df = prepare_ml_dataset(df_ml_input)
+                
+                if not processed_df.empty:
+                    # 3. 拿出最新一天的特徵資料
+                    latest_data = processed_df.iloc[-1]
+                    
+                    # 提取最新的特徵數值
+                    current_bias = float(latest_data['bias_ma5'])
+                    current_volume_change = float(latest_data['Trading_Volume_change_rate'])
+                    
+                    # 建立符合 Scikit-learn 輸入格式的特徵矩陣 [ [特徵1, 特徵2] ]
+                    features = [[current_bias, current_volume_change]]
+                    
+                    # 4. 進行預測
+                    prediction = model.predict(features)[0] # 拿到 0 (跌) 或 1 (漲)
+                    pred_prob = model.predict_proba(features)[0] # 拿到 [跌的機率, 漲的機率]
+                    
+                    # 5. 畫面的排版與呈現
+                    col_m1, col_m2 = st.columns(2)
+                    with col_m1:
+                        st.markdown("#### 當前主要特徵數值")
+                        st.metric("5 日均線乖離率", f"{current_bias*100:.2f}%")
+                        st.metric("成交量 5 日變化率", f"{current_volume_change*100:.2f}%")
+                        
+                    with col_m2:
+                        st.markdown("#### AI 趨勢預測結果")
+                        if prediction == 1:
+                            st.success(f"📈 【模型看漲】\n\n未來 5 日累積報酬率預測為【正】\n\n(AI 信心度：{pred_prob[1]*100:.1f}%)")
+                        else:
+                            st.error(f"📉 【模型看跌】\n\n未來 5 日累積報酬率預測為【負】\n\n(AI 信心度：{pred_prob[0]*100:.1f}%)")
+                            
+                    st.caption("註：此預測為 Baseline Random Forest 模型根據技術指標計算之統計機率，供量化專案展示。")
+                else:
+                    st.warning("提示：該個股歷史資料天數太短，不足以計算機器學習特徵，無法進行預測。")
+                    
+            except Exception as e:
+                st.error(f"❌ 呼叫機器學習管線時發生未知錯誤: {e}")
+        else:
+            st.error("❌ 找不到 `baseline_rf.pkl` 模型檔案！請先在終端機執行 `python run_ml.py` 進行模型訓練與儲存。")

@@ -24,7 +24,7 @@
 
 ### 遇到的問題
 - 在 streamlit頁面上按下「更新證交所資料」鍵後，後台會更新資料，但更新資料後所產出的資料無法再現，不知道是哪裡出了問題。
-![更新資料後所產出的 Feature Importance](screenshot_feature_importance_v2.png)
+![更新資料後所產出的 Feature Importance](screenshot_model_comparison_v2.png)
 - Streamlit 頁面呈現的相關數據與實際狀況有落差，感覺是抓錯資料，但不知道怎麼查
 ![半導體產業營收佔比欄位資料有誤](screenshot_streamlit_error.png)
 
